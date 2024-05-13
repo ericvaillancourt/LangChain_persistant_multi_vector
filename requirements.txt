@@ -1,0 +1,12 @@
+
+sqlalchemy>=1.4
+asyncio
+pickle-mixin
+langchain_core
+langchain
+langchain_openai
+langchain_postgres
+python-dotenv
+pypdf
+psycopg_binary # you may need to change this if you are not on windows
+chromadb

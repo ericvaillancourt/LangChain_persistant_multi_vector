@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+  db:
+    image: ankane/pgvector
+    volumes:
+      - dev-db-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=dev_chat_db
+      - POSTGRES_USER=dev_user
+      - POSTGRES_PASSWORD=Pass1234
+    ports:
+      - "5432:5432"
+
+networks:
+  mon_reseau:
+    driver: bridge
+
+volumes:
+  dev-db-data:
