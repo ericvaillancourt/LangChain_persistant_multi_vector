@@ -1,6 +1,6 @@
 # Document Retrieval System: From Chunking to Question Generation
 
-This repository contains the code and resources for the article "Document Retrieval System: From Chunking to Question Generation". The article explores techniques for breaking down larger documents into smaller chunks, generating concise summaries, and creating hypothetical questions for each chunk. These techniques are invaluable for information retrieval, text analysis, and enhancing comprehension.
+This repository contains the code and resources for the article ["]Document Retrieval System: From Chunking to Question Generation](https://medium.com/@eric_vaillancourt/enough-with-prototyping-time-for-persistent-multi-vector-storage-with-postgresql-in-langchain-8e678738e80d). The article explores techniques for breaking down larger documents into smaller chunks, generating concise summaries, and creating hypothetical questions for each chunk. These techniques are invaluable for information retrieval, text analysis, and enhancing comprehension.
 
 ## Contents
 
