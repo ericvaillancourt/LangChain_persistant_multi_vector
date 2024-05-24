@@ -1,3 +1,4 @@
+# index_with_ids.py
 import logging
 from typing import Union, Iterable, Sequence, Callable, Optional, Dict, Literal, Set, cast
 from langchain_core.documents import Document
@@ -42,6 +43,7 @@ def index_with_ids(
     num_deleted = 0
     results = []
     all_hashed_docs = []  # Initialize to collect all hashed documents
+    ids_operations = []  # Initialize to collect ids and their operations
 
     for doc_batch in _batch(batch_size, doc_iterator):
         if not doc_batch:
@@ -87,11 +89,16 @@ def index_with_ids(
         if uids_to_refresh:
             record_manager.update(uids_to_refresh, time_at_least=index_start_dt)
             num_skipped += len(uids_to_refresh)
+            for uid in uids_to_refresh:
+                ids_operations.append({"key": uid, "operation": "SKIP"})
 
         if docs_to_index:
             vector_store.add_documents(docs_to_index, ids=uids, batch_size=batch_size)
             num_added += len(docs_to_index) - len(seen_docs)
             num_updated += len(seen_docs)
+            for uid in uids:
+                operation = "INS" if uid not in seen_docs else "UPD"
+                ids_operations.append({"key": uid, "operation": operation})
 
         record_manager.update(
             [doc.uid for doc in hashed_docs],
@@ -99,18 +106,21 @@ def index_with_ids(
             time_at_least=index_start_dt,
         )
 
-        if cleanup == "incremental":
-            for source_id in source_ids:
-                if source_id is None:
-                    raise AssertionError("Source ids cannot be None here.")
-            _source_ids = cast(Sequence[str], source_ids)
-            uids_to_delete = record_manager.list_keys(
-                group_ids=_source_ids, before=index_start_dt
-            )
-            if uids_to_delete:
-                vector_store.delete(uids_to_delete)
-                record_manager.delete_keys(uids_to_delete)
-                num_deleted += len(uids_to_delete)
+    # Ensure all documents are checked for incremental cleanup before continuing
+    if cleanup == "incremental":
+        for source_id in source_ids:
+            if source_id is None:
+                raise AssertionError("Source ids cannot be None here.")
+        _source_ids = cast(Sequence[str], source_ids)
+        uids_to_delete = record_manager.list_keys(
+            group_ids=_source_ids, before=index_start_dt
+        )
+        if uids_to_delete:
+            vector_store.delete(uids_to_delete)
+            record_manager.delete_keys(uids_to_delete)
+            num_deleted += len(uids_to_delete)
+            for uid in uids_to_delete:
+                ids_operations.append({"key": uid, "operation": "DEL"})
 
     if cleanup == "full":
         while uids_to_delete := record_manager.list_keys(
@@ -119,18 +129,13 @@ def index_with_ids(
             vector_store.delete(uids_to_delete)
             record_manager.delete_keys(uids_to_delete)
             num_deleted += len(uids_to_delete)
+            for uid in uids_to_delete:
+                ids_operations.append({"key": uid, "operation": "DEL"})
 
     results.append({"num_added": num_added, "num_updated": num_updated, "num_skipped": num_skipped, "num_deleted": num_deleted})
 
-    # Ensure hashed_docs is defined
-    if not all_hashed_docs:
-        all_hashed_docs = []
-
     return {
         "status": "success",
-        "ids": [
-            {"key": doc.uid, "operation": "INS" if doc.uid in uids else "SKIP"}
-            for doc in all_hashed_docs
-        ],
+        "ids": ids_operations,  # Include ids and their operations
         "results": results,
     }

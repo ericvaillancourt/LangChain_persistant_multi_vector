@@ -1,6 +1,7 @@
 import hashlib
 import json
 import uuid
+import logging
 from typing import Any, Dict, Optional, Union, Iterable, Iterator, Sequence, Set, Callable, List, TypeVar, cast
 from itertools import islice
 from langchain_core.documents import Document
@@ -10,12 +11,15 @@ T = TypeVar("T")
 
 NAMESPACE_UUID = uuid.UUID(int=1984)
 
+# Configure logging
+logging.basicConfig(level=logging.DEBUG, filename='hashed_document_debug.log')
+
 def _hash_string_to_uuid(input_string: str) -> uuid.UUID:
     """Hashes a string and returns the corresponding UUID."""
     hash_value = hashlib.sha1(input_string.encode("utf-8")).hexdigest()
     return uuid.uuid5(NAMESPACE_UUID, hash_value)
 
-def _hash_nested_dict_to_uuid(data: dict[Any, Any]) -> uuid.UUID:
+def _hash_nested_dict_to_uuid(data: Dict[Any, Any]) -> uuid.UUID:
     """Hashes a nested dictionary and returns the corresponding UUID."""
     serialized_data = json.dumps(data, sort_keys=True)
     hash_value = hashlib.sha1(serialized_data.encode("utf-8")).hexdigest()
@@ -32,7 +36,6 @@ def generate_reproducible_id_by_content(content: str, metadata: Dict[str, Any]) 
     metadata_copy = {k: v for k, v in metadata.items() if k == "source"}
     combined_data = f"{content}-{json.dumps(metadata_copy, sort_keys=True)}"
     return str(_hash_string_to_uuid(combined_data))
-    
 
 class _HashedDocument(Document):
     """A hashed document with a unique ID."""
@@ -66,6 +69,15 @@ class _HashedDocument(Document):
 
         if _uid is None:
             values["uid"] = values["hash_"]
+
+        # Logging to verify determinism
+        logging.debug(f"Document Content: {content}")
+        logging.debug(f"Document Metadata: {metadata}")
+        logging.debug(f"Content Hash: {content_hash}")
+        logging.debug(f"Source Hash: {source_hash}")
+        logging.debug(f"Combined Hash (hash_): {values['hash_']}")
+        logging.debug(f"UID: {values['uid']}")
+
         return values
 
     def to_document(self) -> Document:
