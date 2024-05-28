@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, String, LargeBinary, select, delete, UniqueConstraint
+from sqlalchemy import create_engine, Column, String, LargeBinary, select, delete
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.ext.declarative import declarative_base
@@ -16,8 +16,6 @@ class ByteStore(Base):
     key = Column(String, primary_key=True)
     value = Column(LargeBinary)
     value_hash = Column(String)  # New field for storing the hash of the value
-    filename = Column(String, primary_key=True)  # Include filename as part of the primary key
-    #__table_args__ = (UniqueConstraint('collection_name', 'key', 'filename', name='_collection_key_filename_uc'),)
 
 class PostgresByteStore(BaseStore):
     def __init__(self, conninfo, collection_name):
@@ -64,141 +62,141 @@ class PostgresByteStore(BaseStore):
             return str(value)
 
     # Synchronous methods
-    def get(self, key, filename=None):
+    def get(self, key):
         with self.Session() as session:
-            result = session.execute(select(ByteStore).filter_by(collection_name=self.collection_name, key=key, filename=filename)).scalar()
+            result = session.execute(select(ByteStore).filter_by(collection_name=self.collection_name, key=key)).scalar()
             return pickle.loads(result.value) if result else None
 
-    def set(self, key, value, filename=None):
+    def set(self, key, value):
         with self.Session() as session:
             serialized_value = self.serialize_value(value)
             hashable_content = self.extract_hashable_content(value)
-            entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=self.compute_hash(hashable_content), filename=filename)
+            entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=self.compute_hash(hashable_content))
             session.merge(entry)
             session.commit()
 
-    def mget(self, keys, filename=None):
+    def mget(self, keys):
         results = {}
         with self.Session() as session:
-            query_results = session.execute(select(ByteStore).where(ByteStore.collection_name == self.collection_name, ByteStore.key.in_(keys), ByteStore.filename == filename)).scalars()
+            query_results = session.execute(select(ByteStore).where(ByteStore.collection_name == self.collection_name, ByteStore.key.in_(keys))).scalars()
             for result in query_results:
                 results[result.key] = pickle.loads(result.value)
         return [results.get(key) for key in keys]
 
     def mset(self, items):
         with self.Session() as session:
-            for key, value, filename in items:
+            for key, value in items:
                 serialized_value = self.serialize_value(value)
                 hashable_content = self.extract_hashable_content(value)
-                entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=self.compute_hash(hashable_content), filename=filename)
+                entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=self.compute_hash(hashable_content))
                 session.merge(entry)
             session.commit()
 
-    def mdelete(self, keys, filename=None):
+    def mdelete(self, keys):
         with self.Session() as session:
-            session.execute(delete(ByteStore).where(ByteStore.collection_name == self.collection_name, ByteStore.key.in_(keys), ByteStore.filename == filename))
+            session.execute(delete(ByteStore).where(ByteStore.collection_name == self.collection_name, ByteStore.key.in_(keys)))
             session.commit()
 
-    def yield_keys(self, prefix=None, filename=None):
+    def yield_keys(self, prefix=None):
         with self.Session() as session:
-            query = select(ByteStore.key).where(ByteStore.collection_name == self.collection_name, ByteStore.filename == filename)
+            query = select(ByteStore.key).where(ByteStore.collection_name == self.collection_name)
             if prefix:
                 query = query.where(ByteStore.key.like(f'{prefix}%'))
             for row in session.execute(query):
                 yield row.key
 
     # Asynchronous methods
-    async def aget(self, key, filename=None):
+    async def aget(self, key):
         async with self.async_session_factory() as session:
-            result = await session.execute(select(ByteStore).filter_by(collection_name=self.collection_name, key=key, filename=filename))
+            result = await session.execute(select(ByteStore).filter_by(collection_name=self.collection_name, key=key))
             byte_store = result.scalars().first()
             return pickle.loads(byte_store.value) if byte_store else None
 
-    async def aset(self, key, value, filename=None):
+    async def aset(self, key, value):
         async with self.async_session_factory() as session:
             serialized_value = self.serialize_value(value)
             hashable_content = self.extract_hashable_content(value)
-            entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=self.compute_hash(hashable_content), filename=filename)
+            entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=self.compute_hash(hashable_content))
             session.merge(entry)
             await session.commit()
 
-    async def amget(self, keys, filename=None):
+    async def amget(self, keys):
         results = {}
         async with self.async_session_factory() as session:
-            query_results = await session.execute(select(ByteStore).where(ByteStore.collection_name == self.collection_name, ByteStore.key.in_(keys), ByteStore.filename == filename))
+            query_results = await session.execute(select(ByteStore).where(ByteStore.collection_name == self.collection_name, ByteStore.key.in_(keys)))
             for result in query_results.scalars():
                 results[result.key] = pickle.loads(result.value)
         return [results.get(key) for key in keys]
 
     async def amset(self, items):
         async with self.async_session_factory() as session:
-            for key, value, filename in items:
+            for key, value in items:
                 serialized_value = self.serialize_value(value)
                 hashable_content = self.extract_hashable_content(value)
-                entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=self.compute_hash(hashable_content), filename=filename)
+                entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=self.compute_hash(hashable_content))
                 session.merge(entry)
             await session.commit()
 
-    async def amdelete(self, keys, filename=None):
+    async def amdelete(self, keys):
         async with self.async_session_factory() as session:
-            await session.execute(delete(ByteStore).where(ByteStore.collection_name == self.collection_name, ByteStore.key.in_(keys), ByteStore.filename == filename))
+            await session.execute(delete(ByteStore).where(ByteStore.collection_name == self.collection_name, ByteStore.key.in_(keys)))
             await session.commit()
 
-    async def ayield_keys(self, prefix=None, filename=None):
+    async def ayield_keys(self, prefix=None):
         async with self.async_session_factory() as session:
-            query = select(ByteStore.key).where(ByteStore.collection_name == self.collection_name, ByteStore.filename == filename)
+            query = select(ByteStore.key).where(ByteStore.collection_name == self.collection_name)
             if prefix:
                 query = query.where(ByteStore.key.like(f'{prefix}%'))
             async for row in session.stream(query):
                 yield row.key
 
     # New synchronous methods with hash checking
-    def conditional_set(self, key, value, filename=None):
+    def conditional_set(self, key, value):
         serialized_value = self.serialize_value(value)
         hashable_content = self.extract_hashable_content(value)
         new_hash = self.compute_hash(hashable_content)
         with self.Session() as session:
-            result = session.execute(select(ByteStore).filter_by(collection_name=self.collection_name, key=key, filename=filename)).scalar()
+            result = session.execute(select(ByteStore).filter_by(collection_name=self.collection_name, key=key)).scalar()
             if result:
                 if result.value_hash == new_hash:
                     return key, 'SKIP'  # No update needed
                 operation = 'UPD'
             else:
                 operation = 'INS'
-            entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=new_hash, filename=filename)
+            entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=new_hash)
             session.merge(entry)
             session.commit()
             return key, operation
 
     def conditional_mset(self, items):
         modified_keys = []
-        item_keys = set((key, filename) for key, _, filename in items)
+        item_keys = set(key for key, _ in items)
         with self.Session() as session:
-            existing_records = session.execute(select(ByteStore).filter_by(collection_name=self.collection_name).filter(ByteStore.filename.in_([filename for _, _, filename in items]))).scalars().all()
-            existing_keys = {(record.key, record.filename) for record in existing_records}
-            existing_record_map = {(record.key, record.filename): record for record in existing_records}
+            existing_records = session.execute(select(ByteStore).filter_by(collection_name=self.collection_name)).scalars().all()
+            existing_keys = {record.key for record in existing_records}
+            existing_record_map = {record.key: record for record in existing_records}
 
             # Process deletions first
             deleted_keys = existing_keys - item_keys
-            for key, filename in deleted_keys:
-                session.execute(delete(ByteStore).where(ByteStore.collection_name == self.collection_name, ByteStore.key == key, ByteStore.filename == filename))
+            for key in deleted_keys:
+                session.execute(delete(ByteStore).where(ByteStore.collection_name == self.collection_name, ByteStore.key == key))
                 modified_keys.append((key, 'DEL'))
 
             # Process inserts and updates
-            for key, value, filename in items:
+            for key, value in items:
                 serialized_value = self.serialize_value(value)
                 hashable_content = self.extract_hashable_content(value)
                 new_hash = self.compute_hash(hashable_content)
-                if (key, filename) in existing_record_map:
-                    existing_hash = existing_record_map[(key, filename)].value_hash
+                if key in existing_record_map:
+                    existing_hash = existing_record_map[key].value_hash
                     if existing_hash == new_hash:
                         modified_keys.append((key, 'SKIP'))
                     else:
-                        entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=new_hash, filename=filename)
+                        entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=new_hash)
                         session.merge(entry)
                         modified_keys.append((key, 'UPD'))
                 else:
-                    entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=new_hash, filename=filename)
+                    entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=new_hash)
                     session.add(entry)
                     modified_keys.append((key, 'INS'))
 
@@ -206,12 +204,12 @@ class PostgresByteStore(BaseStore):
         return modified_keys
 
     # New asynchronous methods with hash checking
-    async def aconditional_set(self, key, value, filename=None):
+    async def aconditional_set(self, key, value):
         serialized_value = self.serialize_value(value)
         hashable_content = self.extract_hashable_content(value)
         new_hash = self.compute_hash(hashable_content)
         async with self.async_session_factory() as session:
-            result = await session.execute(select(ByteStore).filter_by(collection_name=self.collection_name, key=key, filename=filename))
+            result = await session.execute(select(ByteStore).filter_by(collection_name=self.collection_name, key=key))
             result = result.scalars().first()
             if result:
                 if result.value_hash == new_hash:
@@ -219,40 +217,40 @@ class PostgresByteStore(BaseStore):
                 operation = 'UPD'
             else:
                 operation = 'INS'
-            entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=new_hash, filename=filename)
+            entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=new_hash)
             session.merge(entry)
             await session.commit()
             return key, operation
 
     async def aconditional_mset(self, items):
         modified_keys = []
-        item_keys = set((key, filename) for key, _, filename in items)
+        item_keys = set(key for key, _ in items)
         async with self.async_session_factory() as session:
-            existing_records = (await session.execute(select(ByteStore).filter_by(collection_name=self.collection_name).filter(ByteStore.filename.in_([filename for _, _, filename in items])))).scalars().all()
-            existing_keys = {(record.key, record.filename) for record in existing_records}
-            existing_record_map = {(record.key, record.filename): record for record in existing_records}
+            existing_records = (await session.execute(select(ByteStore).filter_by(collection_name=self.collection_name))).scalars().all()
+            existing_keys = {record.key for record in existing_records}
+            existing_record_map = {record.key: record for record in existing_records}
 
             # Process deletions first
             deleted_keys = existing_keys - item_keys
-            for key, filename in deleted_keys:
-                await session.execute(delete(ByteStore).where(ByteStore.collection_name == self.collection_name, ByteStore.key == key, ByteStore.filename == filename))
+            for key in deleted_keys:
+                await session.execute(delete(ByteStore).where(ByteStore.collection_name == self.collection_name, ByteStore.key == key))
                 modified_keys.append((key, 'DEL'))
 
             # Process inserts and updates
-            for key, value, filename in items:
+            for key, value in items:
                 serialized_value = self.serialize_value(value)
                 hashable_content = self.extract_hashable_content(value)
                 new_hash = self.compute_hash(hashable_content)
-                if (key, filename) in existing_record_map:
-                    existing_hash = existing_record_map[(key, filename)].value_hash
+                if key in existing_record_map:
+                    existing_hash = existing_record_map[key].value_hash
                     if existing_hash == new_hash:
                         modified_keys.append((key, 'SKIP'))
                     else:
-                        entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=new_hash, filename=filename)
+                        entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=new_hash)
                         session.merge(entry)
                         modified_keys.append((key, 'UPD'))
                 else:
-                    entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=new_hash, filename=filename)
+                    entry = ByteStore(collection_name=self.collection_name, key=key, value=serialized_value, value_hash=new_hash)
                     session.add(entry)
                     modified_keys.append((key, 'INS'))
 
