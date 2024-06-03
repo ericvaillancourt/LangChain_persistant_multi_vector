@@ -157,7 +157,7 @@ class PostgresByteStore(BaseStore):
         hashable_content = self.extract_hashable_content(value)
         new_hash = self.compute_hash(hashable_content)
         with self.Session() as session:
-            result = session.execute(select(ByteStore).filter_by(collection_name=self.collection_name, key=key)).scalar()
+            result = session.execute(select(ByteStore).filter_by(collection_name=self.collection_name, key=key, filename=filename)).scalar()
             if result:
                 if result.value_hash == new_hash:
                     return key, 'SKIP'  # No update needed
@@ -171,17 +171,30 @@ class PostgresByteStore(BaseStore):
 
     def conditional_mset(self, items):
         modified_keys = []
-        item_keys = set((key, filename) for key, _, filename in items)
+        item_keys = {(key, filename) for key, _, filename in items}
         with self.Session() as session:
-            existing_records = session.execute(select(ByteStore).filter_by(collection_name=self.collection_name)).scalars().all()
-            existing_keys = {(record.key, record.filename) for record in existing_records}
-            existing_record_map = {(record.key, record.filename): record for record in existing_records}
-
             # Process deletions first
-            deleted_keys = existing_keys - item_keys
-            for key, filename in deleted_keys:
-                session.execute(delete(ByteStore).where(ByteStore.collection_name == self.collection_name, ByteStore.key == key, ByteStore.filename == filename))
-                modified_keys.append((key, 'DEL'))
+            existing_keys = session.execute(
+                select(ByteStore.key).where(
+                    ByteStore.collection_name == self.collection_name,
+                    ByteStore.filename == items[0][2]
+                )
+            ).scalars().all()
+
+            keys_to_delete = set(existing_keys) - {key for key, _, _ in items}
+            if keys_to_delete:
+                session.execute(
+                    delete(ByteStore).where(
+                        ByteStore.collection_name == self.collection_name,
+                        ByteStore.filename == items[0][2],
+                        ByteStore.key.in_(keys_to_delete)
+                    )
+                )
+                modified_keys.extend([(key, 'DEL') for key in keys_to_delete])
+            session.commit()
+
+            existing_records = session.execute(select(ByteStore).filter_by(collection_name=self.collection_name)).scalars().all()
+            existing_record_map = {(record.key, record.filename): record for record in existing_records}
 
             # Process inserts and updates
             for key, value, filename in items:
@@ -210,7 +223,7 @@ class PostgresByteStore(BaseStore):
         hashable_content = self.extract_hashable_content(value)
         new_hash = self.compute_hash(hashable_content)
         async with self.async_session_factory() as session:
-            result = await session.execute(select(ByteStore).filter_by(collection_name=self.collection_name, key=key))
+            result = await session.execute(select(ByteStore).filter_by(collection_name=self.collection_name, key=key, filename=filename))
             result = result.scalars().first()
             if result:
                 if result.value_hash == new_hash:
@@ -225,17 +238,30 @@ class PostgresByteStore(BaseStore):
 
     async def aconditional_mset(self, items):
         modified_keys = []
-        item_keys = set((key, filename) for key, _, filename in items)
+        item_keys = {(key, filename) for key, _, filename in items}
         async with self.async_session_factory() as session:
-            existing_records = (await session.execute(select(ByteStore).filter_by(collection_name=self.collection_name))).scalars().all()
-            existing_keys = {(record.key, record.filename) for record in existing_records}
-            existing_record_map = {(record.key, record.filename): record for record in existing_records}
-
             # Process deletions first
-            deleted_keys = existing_keys - item_keys
-            for key, filename in deleted_keys:
-                await session.execute(delete(ByteStore).where(ByteStore.collection_name == self.collection_name, ByteStore.key == key, ByteStore.filename == filename))
-                modified_keys.append((key, 'DEL'))
+            existing_keys = (await session.execute(
+                select(ByteStore.key).where(
+                    ByteStore.collection_name == self.collection_name,
+                    ByteStore.filename == items[0][2]
+                )
+            )).scalars().all()
+
+            keys_to_delete = set(existing_keys) - {key for key, _, _ in items}
+            if keys_to_delete:
+                await session.execute(
+                    delete(ByteStore).where(
+                        ByteStore.collection_name == self.collection_name,
+                        ByteStore.filename == items[0][2],
+                        ByteStore.key.in_(keys_to_delete)
+                    )
+                )
+                modified_keys.extend([(key, 'DEL') for key in keys_to_delete])
+            await session.commit()
+
+            existing_records = (await session.execute(select(ByteStore).filter_by(collection_name=self.collection_name))).scalars().all()
+            existing_record_map = {(record.key, record.filename): record for record in existing_records}
 
             # Process inserts and updates
             for key, value, filename in items:
