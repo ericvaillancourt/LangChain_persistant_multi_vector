@@ -32,10 +32,21 @@ def generate_reproducible_id_by_position(position: int, metadata: Dict[str, Any]
     return str(_hash_string_to_uuid(combined_data))
 
 def generate_reproducible_id_by_content(content: str, metadata: Dict[str, Any]) -> str:
-    """Generates a reproducible unique ID based on the position in the list and metadata."""
+    """Generates a reproducible unique ID based on the content and metadata."""
     metadata_copy = {k: v for k, v in metadata.items() if k == "source"}
     combined_data = f"{content}-{json.dumps(metadata_copy, sort_keys=True)}"
     return str(_hash_string_to_uuid(combined_data))
+
+def generate_reproducible_id_by_smartcontent(position: int, content: str, metadata: Dict[str, Any]) -> str:
+    """Generates a reproducible unique ID based on the content and metadata.
+    and if content is shorter that 30, we add the position as the page number."""
+    metadata_copy = {k: v for k, v in metadata.items() if k == "source"}
+    if len(content) < 50:
+        combined_data = f"page :{position}-{content}-{json.dumps(metadata_copy, sort_keys=True)}"
+    else:
+        combined_data = f"{content}-{json.dumps(metadata_copy, sort_keys=True)}"
+    return str(_hash_string_to_uuid(combined_data))
+   
 
 class _HashedDocument(Document):
     """A hashed document with a unique ID."""

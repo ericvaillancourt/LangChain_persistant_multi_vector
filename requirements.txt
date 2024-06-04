@@ -10,3 +10,5 @@ python-dotenv
 pypdf
 psycopg_binary # you may need to change this if you are not on windows
 chromadb
+unstructured
+python-pptx
